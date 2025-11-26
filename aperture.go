@@ -693,7 +693,15 @@ func getTLSConfig(serverName, baseDir string, autoCert bool) (
 	// exist).
 	tlsKeyFile := filepath.Join(apertureDir, defaultTLSKeyFilename)
 	tlsCertFile := filepath.Join(apertureDir, defaultTLSCertFilename)
-	tlsExtraDomains := []string{serverName}
+
+	// Go 1.25 tightened x509 SAN validation and now rejects empty dNSName
+	// entries (`x509: SAN dNSName is malformed`). When users rely on the
+	// default config (no server name), we still want to generate a usable
+	// self-signed cert, so we only append non-empty hostnames.
+	var tlsExtraDomains []string
+	if serverName != "" {
+		tlsExtraDomains = append(tlsExtraDomains, serverName)
+	}
 	if !fileExists(tlsCertFile) && !fileExists(tlsKeyFile) {
 		log.Infof("Generating TLS certificates...")
 		certBytes, keyBytes, err := cert.GenCertPair(
@@ -754,7 +762,7 @@ func getTLSConfig(serverName, baseDir string, autoCert bool) (
 
 		log.Infof("Renewing TLS certificates...")
 		certBytes, keyBytes, err := cert.GenCertPair(
-			selfSignedCertOrganization, nil, nil, false,
+			selfSignedCertOrganization, nil, tlsExtraDomains, false,
 			selfSignedCertValidity,
 		)
 		if err != nil {
