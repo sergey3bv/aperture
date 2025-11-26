@@ -188,6 +188,10 @@ func setupAperture(t *testing.T) {
 	errChan := make(chan error)
 	shutdown := make(chan struct{})
 	require.NoError(t, aperture.Start(errChan, shutdown))
+	t.Cleanup(func() {
+		close(shutdown)
+		require.NoError(t, aperture.Stop())
+	})
 
 	// Any error while starting?
 	select {
