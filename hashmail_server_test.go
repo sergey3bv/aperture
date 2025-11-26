@@ -512,7 +512,10 @@ func recvFromStream(client hashmailrpc.HashMailClient) error {
 	}()
 
 	select {
-	case <-time.After(time.Second):
+	// Wait a little longer than the server's stream-acquire timeout so we
+	// only trip this path when the server truly failed to hand over the
+	// stream (instead of beating it to the punch).
+	case <-time.After(2 * streamAcquireTimeout):
 		return fmt.Errorf("timed out waiting to receive from receive " +
 			"stream")
 

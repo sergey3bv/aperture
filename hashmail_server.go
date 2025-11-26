@@ -39,6 +39,12 @@ const (
 	// reads for it to be considered for pruning. Otherwise, memory will grow
 	// unbounded.
 	streamTTL = 24 * time.Hour
+
+	// streamAcquireTimeout determines how long we wait for a read/write
+	// stream to become available before reporting it as occupied. Context
+	// cancellation is still honoured immediately, so callers can shorten
+	// the wait.
+	streamAcquireTimeout = 250 * time.Millisecond
 )
 
 // streamID is the identifier of a stream.
@@ -317,7 +323,14 @@ func (s *stream) RequestReadStream(ctx context.Context) (*readStream, error) {
 	case r := <-s.readStreamChan:
 		s.status.streamTaken(true)
 		return r, nil
-	default:
+
+	case <-s.quit:
+		return nil, fmt.Errorf("stream shutting down")
+
+	case <-ctx.Done():
+		return nil, ctx.Err()
+
+	case <-time.After(streamAcquireTimeout):
 		return nil, fmt.Errorf("read stream occupied")
 	}
 }
@@ -332,7 +345,14 @@ func (s *stream) RequestWriteStream(ctx context.Context) (*writeStream, error) {
 	case w := <-s.writeStreamChan:
 		s.status.streamTaken(false)
 		return w, nil
-	default:
+
+	case <-s.quit:
+		return nil, fmt.Errorf("stream shutting down")
+
+	case <-ctx.Done():
+		return nil, ctx.Err()
+
+	case <-time.After(streamAcquireTimeout):
 		return nil, fmt.Errorf("write stream occupied")
 	}
 }
