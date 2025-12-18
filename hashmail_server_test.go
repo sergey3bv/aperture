@@ -188,6 +188,10 @@ func setupAperture(t *testing.T) {
 	errChan := make(chan error)
 	shutdown := make(chan struct{})
 	require.NoError(t, aperture.Start(errChan, shutdown))
+	t.Cleanup(func() {
+		close(shutdown)
+		require.NoError(t, aperture.Stop())
+	})
 
 	// Any error while starting?
 	select {
@@ -508,7 +512,10 @@ func recvFromStream(client hashmailrpc.HashMailClient) error {
 	}()
 
 	select {
-	case <-time.After(time.Second):
+	// Wait a little longer than the server's stream-acquire timeout so we
+	// only trip this path when the server truly failed to hand over the
+	// stream (instead of beating it to the punch).
+	case <-time.After(2 * streamAcquireTimeout):
 		return fmt.Errorf("timed out waiting to receive from receive " +
 			"stream")
 
