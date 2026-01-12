@@ -44,8 +44,9 @@ type ConfRegistration struct {
 }
 
 func (c *mockChainNotifier) RegisterSpendNtfn(ctx context.Context,
-	outpoint *wire.OutPoint, pkScript []byte, heightHint int32) (
-	chan *chainntnfs.SpendDetail, chan error, error) {
+	outpoint *wire.OutPoint, pkScript []byte, heightHint int32,
+	opts ...lndclient.NotifierOption) (chan *chainntnfs.SpendDetail,
+	chan error, error) {
 
 	c.lnd.RegisterSpendChannel <- &SpendRegistration{
 		HeightHint: heightHint,

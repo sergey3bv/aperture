@@ -1,6 +1,6 @@
 module github.com/lightninglabs/aperture/tools
 
-go 1.24.6
+go 1.24.9
 
 require (
 	github.com/golangci/golangci-lint/v2 v2.4.0
