@@ -4,12 +4,14 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lightninglabs/aperture/auth"
 	"github.com/lightninglabs/aperture/l402"
@@ -172,6 +174,26 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Determine auth level required to access service and dispatch request
 	// accordingly.
 	authLevel := target.AuthRequired(r)
+
+	// checkRateLimit is a helper that checks rate limits after determining
+	// the authentication status. This ensures we only use L402 token IDs
+	// for authenticated requests, preventing DoS via garbage tokens.
+	checkRateLimit := func(authenticated bool) bool {
+		if target.rateLimiter == nil {
+			return true
+		}
+		key := ExtractRateLimitKey(r, remoteIP, authenticated)
+		allowed, retryAfter := target.rateLimiter.Allow(r, key)
+		if !allowed {
+			prefixLog.Infof("Rate limit exceeded for key %s, "+
+				"retry after %v", key, retryAfter)
+			addCorsHeaders(w.Header())
+			sendRateLimitResponse(w, r, retryAfter)
+		}
+
+		return allowed
+	}
+
 	skipInvoiceCreation := target.SkipInvoiceCreation(r)
 	switch {
 	case authLevel.IsOn():
@@ -212,6 +234,11 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 			prefixLog.Infof("Authentication failed. Sending 402.")
 			p.handlePaymentRequired(w, r, resourceName, price)
+			return
+		}
+
+		// User is authenticated, apply rate limit with L402 token ID.
+		if !checkRateLimit(true) {
 			return
 		}
 
@@ -267,6 +294,21 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				)
 				return
 			}
+
+			// Unauthenticated freebie user, rate limit by IP.
+			if !checkRateLimit(false) {
+				return
+			}
+		} else if !checkRateLimit(true) {
+			// Authenticated user on freebie path, rate limit by
+			// L402 token.
+			return
+		}
+
+	default:
+		// Auth is off, rate limit by IP for unauthenticated access.
+		if !checkRateLimit(false) {
+			return
 		}
 	}
 
@@ -483,6 +525,36 @@ func sendDirectResponse(w http.ResponseWriter, r *http.Request,
 
 	default:
 		http.Error(w, errInfo, statusCode)
+	}
+}
+
+// sendRateLimitResponse sends a rate limit exceeded response to the client.
+// For HTTP clients, it returns 429 Too Many Requests with Retry-After header.
+// For gRPC clients, it returns a ResourceExhausted status.
+func sendRateLimitResponse(w http.ResponseWriter, r *http.Request,
+	retryAfter time.Duration) {
+
+	// Round up to ensure clients don't retry before the limit resets.
+	retrySeconds := int(math.Ceil(retryAfter.Seconds()))
+	if retrySeconds < 1 {
+		retrySeconds = 1
+	}
+
+	// Set Retry-After header for both HTTP and gRPC.
+	w.Header().Set("Retry-After", strconv.Itoa(retrySeconds))
+
+	// Check if this is a gRPC request.
+	if strings.HasPrefix(r.Header.Get(hdrContentType), hdrTypeGrpc) {
+		w.Header().Set(
+			hdrGrpcStatus,
+			strconv.Itoa(int(codes.ResourceExhausted)),
+		)
+		w.Header().Set(hdrGrpcMessage, "rate limit exceeded")
+
+		// gRPC requires 200 OK even for errors.
+		w.WriteHeader(http.StatusOK)
+	} else {
+		http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 	}
 }
 

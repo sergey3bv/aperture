@@ -110,6 +110,12 @@ type Service struct {
 	// request, but still try to do the l402 authentication.
 	AuthSkipInvoiceCreationPaths []string `long:"authskipinvoicecreationpaths" description:"List of regular expressions for paths that will skip invoice creation'"`
 
+	// RateLimits is an optional list of rate-limiting rules for this
+	// service. Each rule specifies a path pattern and rate limit
+	// parameters. All matching rules are evaluated; if any rule denies
+	// the request, it is rejected.
+	RateLimits []*RateLimitConfig `long:"ratelimits" description:"List of rate limiting rules for this service"`
+
 	// compiledHostRegexp is the compiled host regex.
 	compiledHostRegexp *regexp.Regexp
 
@@ -123,8 +129,9 @@ type Service struct {
 	// invoice creation paths.
 	compiledAuthSkipInvoiceCreationPaths []*regexp.Regexp
 
-	freebieDB freebie.DB
-	pricer    pricer.Pricer
+	freebieDB   freebie.DB
+	pricer      pricer.Pricer
+	rateLimiter *RateLimiter
 }
 
 // ResourceName returns the string to be used to identify which resource a
@@ -273,6 +280,47 @@ func prepareServices(services []*Service) error {
 				service.compiledAuthSkipInvoiceCreationPaths,
 				regExp,
 			)
+		}
+
+		// Validate and compile rate limit configurations.
+		if len(service.RateLimits) > 0 {
+			for i, rl := range service.RateLimits {
+				// Validate required fields.
+				if rl.Requests <= 0 {
+					return fmt.Errorf("service %s rate "+
+						"limit %d: requests must be "+
+						"positive", service.Name, i)
+				}
+				if rl.Per <= 0 {
+					return fmt.Errorf("service %s rate "+
+						"limit %d: per duration must "+
+						"be positive", service.Name, i)
+				}
+
+				// Compile path regex if provided.
+				if rl.PathRegexp != "" {
+					compiled, err := regexp.Compile(
+						rl.PathRegexp,
+					)
+					if err != nil {
+						return fmt.Errorf("service %s "+
+							"rate limit %d: error "+
+							"compiling path regex: "+
+							"%w", service.Name, i,
+							err)
+					}
+					rl.compiledPathRegexp = compiled
+				}
+			}
+
+			// Create the rate limiter for this service.
+			service.rateLimiter = NewRateLimiter(
+				service.Name, service.RateLimits,
+			)
+
+			log.Infof("Initialized rate limiter for service %s "+
+				"with %d rules", service.Name,
+				len(service.RateLimits))
 		}
 
 		// If dynamic prices are enabled then use the provided
