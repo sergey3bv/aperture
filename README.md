@@ -50,3 +50,69 @@ services and APIs.
   compare with `sample-conf.yaml`.
 * Start aperture without any command line parameters (`./aperture`), all configuration
   is done in the `~/.aperture/aperture.yaml` file.
+
+## Rate Limiting
+
+Aperture supports optional per-endpoint rate limiting using a token bucket
+algorithm. Rate limits are configured per service and applied based on the
+client's L402 token ID for authenticated requests, or IP address for
+unauthenticated requests.
+
+### Features
+
+* **Token bucket algorithm**: Allows controlled bursting while maintaining a
+  steady-state request rate.
+* **Per-client isolation**: Each L402 token ID or IP address has independent
+  rate limit buckets.
+* **Path-based rules**: Different endpoints can have different rate limits using
+  regular expressions.
+* **Multiple rules**: All matching rules are evaluated; if any rule denies the
+  request, it is rejected. This allows layering global and endpoint-specific
+  limits.
+* **Protocol-aware responses**: Returns HTTP 429 with `Retry-After` header for
+  REST requests, and gRPC `ResourceExhausted` status for gRPC requests.
+
+### Configuration
+
+Rate limits are configured in the `ratelimits` section of each service:
+
+```yaml
+services:
+  - name: "myservice"
+    hostregexp: "api.example.com"
+    address: "127.0.0.1:8080"
+    protocol: https
+
+    ratelimits:
+      # Global rate limit for all endpoints
+      - requests: 100    # Requests allowed per time window
+        per: 1s          # Time window duration (1s, 1m, 1h, etc.)
+        burst: 100       # Max burst capacity (defaults to 'requests')
+
+      # Stricter limit for expensive endpoints
+      - pathregexp: '^/api/v1/expensive.*$'
+        requests: 5
+        per: 1m
+        burst: 5
+```
+
+This example configures two rate limit rules using a token bucket algorithm. Each
+client gets a "bucket" of tokens that refills at the `requests/per` rate, up to the
+`burst` capacity. A request consumes one token; if no tokens are available, the
+request is rejected. This allows clients to make quick bursts of requests (up to
+`burst`) while enforcing a steady-state rate limit over time.
+
+1. **Global limit**: All endpoints are limited to 100 requests per second per client,
+   with a burst capacity of 100.
+2. **Endpoint-specific limit**: Paths matching `/api/v1/expensive.*` have a stricter
+   limit of 5 requests per minute with a burst of 5. Since both rules are evaluated,
+   requests to expensive endpoints must satisfy both limits.
+
+### Configuration Options
+
+| Option | Description | Required |
+|--------|-------------|----------|
+| `pathregexp` | Regular expression to match request paths. If omitted, matches all paths. | No |
+| `requests` | Number of requests allowed per time window. | Yes |
+| `per` | Time window duration (e.g., `1s`, `1m`, `1h`). | Yes |
+| `burst` | Maximum burst size. Defaults to `requests` if not set. | No |
