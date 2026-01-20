@@ -205,18 +205,19 @@ func TestExtractRateLimitKeyIP(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/test", nil)
 	ip := net.ParseIP("192.168.1.100")
 
-	// Unauthenticated request should use IP.
+	// Unauthenticated request should use masked IP (/24 for IPv4).
 	key := ExtractRateLimitKey(req, ip, false)
-	require.Equal(t, "ip:192.168.1.100", key)
+	require.Equal(t, "ip:192.168.1.0", key)
 }
 
 // TestExtractRateLimitKeyIPv6 tests IPv6 key extraction.
 func TestExtractRateLimitKeyIPv6(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/test", nil)
-	ip := net.ParseIP("2001:db8::1")
+	ip := net.ParseIP("2001:db8:1234:5678::1")
 
+	// IPv6 should be masked to /48.
 	key := ExtractRateLimitKey(req, ip, false)
-	require.Equal(t, "ip:2001:db8::1", key)
+	require.Equal(t, "ip:2001:db8:1234::", key)
 }
 
 // TestExtractRateLimitKeyUnauthenticatedIgnoresL402 tests that unauthenticated
@@ -228,9 +229,10 @@ func TestExtractRateLimitKeyUnauthenticatedIgnoresL402(t *testing.T) {
 	req.Header.Set("Authorization", "L402 garbage:token")
 	ip := net.ParseIP("192.168.1.100")
 
-	// Even with L402 header present, unauthenticated=false should use IP.
+	// Even with L402 header present, unauthenticated=false should use
+	// masked IP.
 	key := ExtractRateLimitKey(req, ip, false)
-	require.Equal(t, "ip:192.168.1.100", key)
+	require.Equal(t, "ip:192.168.1.0", key)
 }
 
 // TestRateLimitConfigRate tests the Rate() calculation.

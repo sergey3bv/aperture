@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lightninglabs/aperture/l402"
+	"github.com/lightninglabs/aperture/netutil"
 	"github.com/lightninglabs/neutrino/cache/lru"
 	"golang.org/x/time/rate"
 )
@@ -246,5 +247,6 @@ func ExtractRateLimitKey(r *http.Request, remoteIP net.IP,
 	}
 
 	// Fall back to IP address for unauthenticated requests.
-	return "ip:" + remoteIP.String()
+	// Mask the IP to group clients from the same network segment.
+	return "ip:" + netutil.MaskIP(remoteIP).String()
 }

@@ -3,10 +3,8 @@ package freebie
 import (
 	"net"
 	"net/http"
-)
 
-var (
-	defaultIPMask = net.IPv4Mask(0xff, 0xff, 0xff, 0x00)
+	"github.com/lightninglabs/aperture/netutil"
 )
 
 type Count uint16
@@ -17,7 +15,7 @@ type memStore struct {
 }
 
 func (m *memStore) getKey(ip net.IP) string {
-	return ip.Mask(defaultIPMask).String()
+	return netutil.MaskIP(ip).String()
 }
 
 func (m *memStore) currentCount(ip net.IP) Count {
@@ -38,10 +36,10 @@ func (m *memStore) TallyFreebie(r *http.Request, ip net.IP) (bool, error) {
 	return true, nil
 }
 
-// NewMemIPMaskStore creates a new in-memory freebie store that masks the last
-// byte of an IP address to keep track of free requests. The last byte of the
-// address is discarded for the mapping to reduce risk of abuse by users that
-// have a whole range of IPs at their disposal.
+// NewMemIPMaskStore creates a new in-memory freebie store that masks IP
+// addresses to keep track of free requests. IPv4 addresses are masked to /24
+// and IPv6 addresses to /48. This reduces risk of abuse by users that have a
+// whole range of IPs at their disposal.
 func NewMemIPMaskStore(numFreebies Count) DB {
 	return &memStore{
 		numFreebies:    numFreebies,
