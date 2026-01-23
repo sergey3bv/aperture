@@ -195,6 +195,28 @@ services:
     authskipinvoicecreationpaths:
       - '^/streamingservice.*$'
 
+    # Optional per-endpoint rate limits using a token bucket algorithm.
+    # Rate limiting is applied per L402 token ID (or IP address for
+    # unauthenticated requests). All matching rules are evaluated; if any
+    # rule denies the request, it is rejected.
+    ratelimits:
+        # Rate limit for general API endpoints.
+      - pathregexp: '^/looprpc.SwapServer/LoopOutTerms.*$'
+        # Number of requests allowed per time window. Must be provided and
+        # positive.
+        requests: 5
+        # Time window duration (e.g., 1s, 1m, 1h).  Must be provided and
+        # positive.
+        per: 1s
+        # Maximum burst capacity. Must be positive if provided.
+        burst: 100
+
+        # Stricter rate limit for quote endpoints.
+      - pathregexp: '^/looprpc.SwapServer/LoopOutQuote.*$'
+        requests: 2
+        per: 1s
+        burst: 2
+
     # Options to use for connection to the price serving gRPC server.
     dynamicprice:
       # Whether or not a gRPC server is available to query price data from. If
