@@ -43,7 +43,8 @@ func (e *limiterEntry) Size() (uint64, error) {
 
 // RateLimiter manages per-key rate limiters with LRU eviction.
 type RateLimiter struct {
-	mu sync.Mutex
+	// cacheMu protects the LRU cache which is not concurrency-safe.
+	cacheMu sync.Mutex
 
 	// configs is the list of rate limit configurations for this limiter.
 	configs []*RateLimitConfig
@@ -93,9 +94,6 @@ func NewRateLimiter(serviceName string, configs []*RateLimitConfig,
 // duration to wait if denied.
 func (rl *RateLimiter) Allow(r *http.Request, key string) (bool,
 	time.Duration) {
-
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
 
 	path := r.URL.Path
 
@@ -183,9 +181,11 @@ func (rl *RateLimiter) Allow(r *http.Request, key string) (bool,
 }
 
 // getOrCreateLimiter retrieves an existing limiter or creates a new one.
-// Must be called with mu held.
 func (rl *RateLimiter) getOrCreateLimiter(key limiterKey,
 	cfg *RateLimitConfig) *rate.Limiter {
+
+	rl.cacheMu.Lock()
+	defer rl.cacheMu.Unlock()
 
 	// Try to get existing entry from cache (also updates LRU order).
 	if entry, err := rl.cache.Get(key); err == nil {
@@ -216,8 +216,8 @@ func (rl *RateLimiter) getOrCreateLimiter(key limiterKey,
 
 // Size returns the current number of entries in the cache.
 func (rl *RateLimiter) Size() int {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
+	rl.cacheMu.Lock()
+	defer rl.cacheMu.Unlock()
 
 	return rl.cache.Len()
 }
