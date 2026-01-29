@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -376,6 +377,16 @@ func (p *Proxy) director(req *http.Request) {
 		req.Host = target.Address
 		req.URL.Host = target.Address
 		req.URL.Scheme = target.Protocol
+
+		// Rewrite prefix with one from the configuration
+		if prefix, ok := target.Rewrite["prefix"]; ok {
+			newPath, err := url.JoinPath(prefix, req.URL.Path)
+			if err == nil {
+				req.URL.Path = newPath
+			} else {
+				log.Errorf("could not add prefix: %v", err)
+			}
+		}
 
 		// Make sure we always forward the authorization in the correct/
 		// default format so the backend knows what to do with it.
