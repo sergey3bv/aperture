@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -116,6 +117,12 @@ type Service struct {
 	// the request, it is rejected.
 	RateLimits []*RateLimitConfig `long:"ratelimits" description:"List of rate limiting rules for this service"`
 
+	// Rewrite is a map of strings that defines what should be rewritten
+	// in the client request.
+	//
+	// Allowed keys are: prefix.
+	Rewrite map[string]string `long:"rewrite" description:"List of values to rewrite"`
+
 	// compiledHostRegexp is the compiled host regex.
 	compiledHostRegexp *regexp.Regexp
 
@@ -222,6 +229,22 @@ func prepareServices(services []*Service) error {
 				return fmt.Errorf("unsupported file prefix "+
 					"format %s", value)
 			}
+		}
+
+		// Check if rewrite is valid
+		prefixInput, ok := service.Rewrite["prefix"]
+		if ok {
+			u, err := url.Parse(prefixInput)
+			if err != nil {
+				return fmt.Errorf("unsupported prefix format "+
+					"for rewrite: %v", err)
+			}
+			if u.Host != "" || u.Scheme != "" || u.Path == "" || u.Path[0] != '/' {
+				return fmt.Errorf("invalid prefix format: "+
+					"expected absolute path, got \"%s\" ", u)
+			}
+
+			service.Rewrite["prefix"] = u.EscapedPath()
 		}
 
 		// Compile the host regex.
