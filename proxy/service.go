@@ -232,6 +232,14 @@ func prepareServices(services []*Service) error {
 		}
 
 		// Check if rewrite is valid
+		for key := range service.Rewrite {
+			switch key {
+			case "prefix":
+			default:
+				return fmt.Errorf("unknown rewrite key: %s", key)
+			}
+		}
+
 		prefixInput, ok := service.Rewrite["prefix"]
 		if ok {
 			u, err := url.Parse(prefixInput)
